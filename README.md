@@ -1,9 +1,7 @@
 # vs_common
-The vs_common package is a C++ library for vision/robotics system, which provides lots of useful basic tools such as timer, logger, image process, file process, numeric calculation and so on.
+The vs_common package is a C++ library for vision/robotics system, which provides a lot of useful functions including data structure, multithread processing, image processing, random generation, numeric utils, vector utils, string utils, system logger, opencv tools and so on.
 
 We try to build this library as a basic dependency of other vision/robotics packages. So it only contain algorithm independent tools and basic data structures, so as to put more focus on algorithm rather than miscellaneous functions
-
-This repository contains a lot of useful functions including data structure, multithread processing, image processing, random generation, numeric utils, vector utils, string utils, system logger, opencv tools and so on.
 
 ## Prerequisites
 - C++ 11
