@@ -1,6 +1,5 @@
 #ifndef __VS_STD_OUT_H__
 #define __VS_STD_OUT_H__
-
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -8,7 +7,7 @@
 #include <deque>
 
 template <typename T>
-std::ostream& operator<<( std::ostream &os,const std::vector<T>& m )
+std::ostream& operator<<(std::ostream &os, const std::vector<T>& m )
 {
     for (int i=0;i<m.size();i++)
         os <<m[i]<<" ";
@@ -16,36 +15,42 @@ std::ostream& operator<<( std::ostream &os,const std::vector<T>& m )
 }
 
 template <typename T>
-std::ostream& operator<<( std::ostream &os,const std::deque<T>& m )
+std::ostream& operator<<(std::ostream &os, const std::deque<T>& m )
 {
     for (int i=0;i<m.size();i++)
         os <<m[i]<<" ";
     return os;
 }
 
+namespace vs
+{
+
+#if 0
 /** \brief macro funtions of coutColor() to adapt the use of '<<' such as
  COUT_COLOR("str1"<<"str2")*/
-#define COUT_COLOR(message,color){\
+#define COUT_COLOR(message, color){\
     std::stringstream __ss_UNIQUE__;\
     __ss_UNIQUE__<<message;\
-    coutColor(__ss_UNIQUE__.str(),color);}
+    vs::coutColor(__ss_UNIQUE__.str(), color);}
 
 /** \brief use std::cout output information with font color blue */
-#define COUT_INFO(message) COUT_COLOR(message,COLOR_BLUE)
+#define COUT_INFO(message) COUT_COLOR(message, COLOR_BLUE)
 
 /** \brief macro funtions of coutWarn() to adapt the use of '<<'*/
- #define COUT_WARN(module,message) {\
+#define COUT_WARN(module, message) {\
     std::stringstream __ss_UNIQUE__;\
     __ss_UNIQUE__<<message;\
-    coutWarn(module,__ss_UNIQUE__.str());}
+    vs::coutWarn(module, __ss_UNIQUE__.str());}
 
 /** \brief macro funtions of coutError() to adapt the use of '<<' */
- #define COUT_ERROR(module,message) {\
+ #define COUT_ERROR(module, message) {\
     std::stringstream __ss_UNIQUE__;\
     __ss_UNIQUE__<<message;\
-    coutError(module,__ss_UNIQUE__.str());}
+    vs::coutError(module, __ss_UNIQUE__.str());}
+#endif
 
-enum ColorType {
+enum ColorType
+{
     COLOR_DARKBLUE = 1,
     COLOR_DARKGREEN,
     COLOR_DARKTEAL,
@@ -63,12 +68,13 @@ enum ColorType {
     COLOR_WHITE
 };
 /** \brief use std::cout output message with specific color */
-void coutColor(const std::string& info,int color=COLOR_WHITE);
+void coutColor(const std::string& info, int color=COLOR_WHITE);
 
 /** \brief use std::cout output warning with font color green */
-void coutError(const std::string& module,const std::string& info);
+void coutError(const std::string& module, const std::string& info);
 
 /** \brief use std::cout output error with font color red */
-void coutWarn(const std::string& module,const std::string& info);
+void coutWarn(const std::string& module, const std::string& info);
 
-#endif
+} /* namespace vs */
+#endif//__VS_STD_OUT_H__

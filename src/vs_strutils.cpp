@@ -1,23 +1,7 @@
 #include "vs_strutils.h"
 
-bool isBlankLine(const std::string& line) {
-    bool blank = true;
-    for (size_t i = 0; i < line.size(); i++) {
-        if (line[i] != ' ' &&
-            line[i] != '\n' &&
-            line[i] != '\r' &&
-            line[i] != '\t')
-            blank = false;
-    }
-    return blank;
-}
-
-bool isCommentLine(const std::string& line) {
-    if (line.size() < 1 ||
-        line[0] == '#')
-        return true;
-    return false;
-}
+namespace vs
+{
 
 bool match(const std::string& line, const std::string& target)
 {
@@ -39,11 +23,10 @@ std::string cut(const std::string& line, const std::string& target)
 void cut(const std::string& line, const std::string& target, std::string& front, std::string& back)
 {
     size_t i = line.find(target.c_str());
-    if (i == line.npos){
+    if (i == line.npos) {
         front = line;
         back = "";
-    }
-    else{
+    } else {
         front = line.substr(0, i);
         back = line.substr(i + target.length());
     }
@@ -76,3 +59,4 @@ std::vector<double> str2vec(const std::string& s)
     return data;
 }
 
+} /* namespace vs */

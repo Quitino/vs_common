@@ -1,28 +1,31 @@
-#include "vs_performance.h"
+#include "vs_perf.h"
 #include <map>
+
+namespace vs
+{
 
 static std::map<std::string, PerfCounter> p_perf_counter;
 static bool p_perf_enable = false;
 
-void perf_enable(bool enable)
+void perfEnable(bool enable)
 {
     p_perf_enable = enable;
 }
 
-void perf_begin(const char* name)
+void perfBegin(const char* name)
 {
     if(p_perf_enable)
         p_perf_counter[std::string(name)].start();
 
 }
 
-void perf_end(const char* name)
+void perfEnd(const char* name)
 {
     if(p_perf_enable)
         p_perf_counter[std::string(name)].stop();
 }
 
-void perf_print(const char* name, bool verbose)
+void perfPrint(const char* name, bool verbose)
 {
     if(p_perf_enable)
     {
@@ -42,11 +45,11 @@ void perf_print(const char* name, bool verbose)
             {
                 it->second.print(it->first.c_str(), verbose);
             }
-        }       
+        }
     }
 }
 
-float perf_avg(const char* name)
+float perfAvg(const char* name)
 {
     if(!p_perf_enable) return 0;
 
@@ -63,3 +66,5 @@ float perf_avg(const char* name)
     }
     return it->second.mean();
 }
+
+} /* namespace vs */

@@ -1,113 +1,132 @@
 #include "vs_syslog.h"
+#include "vs_os.h"
 #include <fstream>
 #include <mutex>
-#include "vs_fileutils.h"
+#include <algorithm>
 
-FILE* g_fp_sys = NULL;
-std::string g_log_dir;
-
-static std::string p_log_dir = std::string(getHomePath())+"/data/log/";
-static std::string p_log_count_file = p_log_dir+"/log_count.txt";
-static std::mutex p_mtx_logcount;
-
-void setLogDir(const char* logdir)
+namespace vs
 {
-    p_log_dir = std::string(logdir);
-    p_log_count_file = p_log_dir+"/log_count.txt";
+
+SysLogger::SysLogger(): m_fp_sys(NULL) {}
+
+bool SysLogger::init(const char* logdir, size_t max_dir_size,
+                     const char* syslogdir, size_t max_syslog_size)
+{
+    if(logdir)
+    {
+        m_log_dir = std::string(logdir);
+        m_fcnt = m_log_dir + "/log_count.txt";
+    }
+    makedirs(m_log_dir.c_str());
+    cleanLogDir(max_dir_size);
+    m_path = makeLogPath();
+
+    if(syslogdir)
+    {
+        makedirs(syslogdir);
+        // clean
+        auto files = listdir(syslogdir, 1, 0);
+        if(!files.empty())
+        {
+            std::sort(files.begin(), files.end());
+            double sum_size = 0;
+            for(int i = files.size() - 1; i >= 0; i--)
+            {
+                const auto& f = files[i];
+                if(suffix(f.c_str()) != ".log") continue;
+                if(sum_size > max_syslog_size)
+                    std::remove(f.c_str());
+                else
+                    sum_size += filesize(f.c_str());
+            }
+        }
+        int log_count = readLogCount();
+        char t[128] = {0};
+        snprintf(t, 128, "%s/system_%04d.log", syslogdir, log_count);
+        m_fp_sys = fopen(t, "w");
+    }
+    else
+    {
+        m_fp_sys = fopen(join(m_path, "system.log").c_str(), "w");
+    }
+    return m_fp_sys;
 }
 
-const char* getHomePath()
+int SysLogger::readLogCount()
 {
-    return getenv("HOME");
-}
-
-/* read current log count from p_log_count_file */
-static int readLogCount()
-{
-    p_mtx_logcount.lock();
+    m_mtx_logcnt.lock();
     int log_count = -1;
-    std::ifstream fin(p_log_count_file.c_str());
-    if(fin.is_open())
-        fin>>log_count;
+    std::ifstream fin(m_fcnt.c_str());
+    if(fin.is_open()) fin >> log_count;
     fin.close();
-    p_mtx_logcount.unlock();
-
-    if(log_count>1000000) {log_count = -1;}    
+    m_mtx_logcnt.unlock();
     return log_count;
 }
 
-/* write current log count to p_log_count_file */
-static void writeLogCount(int log_count)
+void SysLogger::writeLogCount(int log_count)
 {
-    p_mtx_logcount.lock();
-    std::ofstream fout(p_log_count_file.c_str());
-    fout<<log_count;
+    m_mtx_logcnt.lock();
+    std::ofstream fout(m_fcnt.c_str());
+    fout << log_count;
     fout.close();
-    p_mtx_logcount.unlock();
+    m_mtx_logcnt.unlock();
 }
 
-/* combile log_count to log path */
-static std::string combileLogPath(int log_count)
+std::string SysLogger::combileLogPath(int log_count)
 {
     char t[256] = {0};
-    sprintf(t, "%s/%d/", p_log_dir.c_str(), log_count);
+    snprintf(t, sizeof(t), "%s/%d/", m_log_dir.c_str(), log_count);
     return std::string(t);
 }
 
-/* make log path, read log_count and update it by +1, create new log dir*/
-static std::string vsMakeLogPath()
+std::string SysLogger::makeLogPath()
 {
-    if(!existDir(p_log_dir.c_str()))
-        createDir(p_log_dir.c_str());
-
+    makedirs(m_log_dir.c_str());
     int log_count = readLogCount();
-    if(log_count<0)
-        log_count = 0;
-    else
-        log_count++;
+    if(log_count < 0) log_count = 0;
+    else log_count++;
 
     std::string new_path = combileLogPath(log_count);
-    if(!existDir(new_path.c_str()))
-        createDir(new_path.c_str());
-    writeLogCount(log_count);
+    makedirs(new_path.c_str());
+    if(exists(new_path.c_str()))
+        writeLogCount(log_count);
     return new_path;
 }
 
-/** \brief clean old data in log dir*/
-static void vsCleanLogDir()
+void SysLogger::cleanLogDir(size_t max_dir_size)
 {
-    if(!existDir(p_log_dir.c_str())) return;
-    const unsigned long max_dir_size = 4e9; //4GB
-    unsigned long cur_dir_size = dirSize(p_log_dir.c_str());
+    if(!exists(m_log_dir.c_str())) return;
+    size_t cur_dir_size = dirsize(m_log_dir.c_str());
     if(cur_dir_size > max_dir_size)
     {
         int cur_cnt = readLogCount();
         int start_cnt = 0;
-        for(; start_cnt<cur_cnt; start_cnt++)
+        for(; start_cnt < cur_cnt; start_cnt++)
         {
             std::string t = combileLogPath(start_cnt);
             const char* tdir = t.c_str();
-            if(existDir(tdir))
+            if(exists(tdir))
                 break;
         }
-        unsigned long free_size = cur_dir_size - max_dir_size/2;
-        unsigned long sum_size = 0;
-        for(int i=start_cnt; i<cur_cnt-10; i++)
+        size_t free_size = cur_dir_size - max_dir_size / 2;
+        size_t sum_size = 0;
+        for(int i = start_cnt; i < cur_cnt - 3; i++)
         {
             std::string t = combileLogPath(i);
             const char* tdir = t.c_str();
-            if(existDir(tdir))
+            if(exists(tdir))
             {
-                unsigned long s = dirSize(tdir);
+                size_t s = dirsize(tdir);
                 char cmd[256] = {0};
-                sprintf(cmd, "rm -rf %s", tdir);
+                snprintf(cmd, sizeof(cmd), "rm -rf %s", tdir);
                 int res = system(cmd);
                 res = res;
                 sum_size += s;
                 if(sum_size > free_size)
                 {
-                    printf("[WARN] No enougn disk space. Remove data dir(%d - %d), total free %.2f MB\n",
-                                    start_cnt, i, (double)sum_size/1024.0/1024.0);
+                    printf("[WARN] No enougn disk space. Remove data dir(%d - %d), "
+                            "total free %.2f MB\n",
+                             start_cnt, i, (double)sum_size / 1024.0 / 1024.0);
                     break;
                 }
             }
@@ -115,29 +134,4 @@ static void vsCleanLogDir()
     }
 }
 
-bool initLog(const char* logdir)
-{
-    if(logdir)
-        setLogDir(logdir);
-    g_log_dir = vsMakeLogPath();
-    vsCleanLogDir();
-    g_fp_sys = fopen((g_log_dir+"/system.log").c_str(),"w");
-    return g_fp_sys;
-}
-
-const char* vsGetLogPath()
-{
-    return g_log_dir.c_str();
-}
-
-void writeFile(const char* file, const char* content, const char* mode)
-{
-    FILE* fp = fopen(file, mode);
-    if(!fp)
-    {
-        printf("[ERROR] open file '%s' failed.\n", file);
-        return;
-    }
-    fprintf(fp, "%s\n", content);
-    fclose(fp);
-}
+} /* namespace vs */

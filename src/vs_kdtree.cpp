@@ -1,7 +1,167 @@
 #include "vs_kdtree.h"
 #include <stdio.h>
 #include <algorithm>
-#include <iostream>
+#include <vector>
+#define HAVE_BOOST 1
+// #define HAVE_ALGLIB 1
+
+#if HAVE_BOOST
+#include <boost/multi_array.hpp>
+#include <boost/array.hpp>
+
+namespace vs
+{
+
+
+typedef boost::multi_array<float, 2>           KDTreeArray;
+typedef boost::const_multi_array_ref<float, 2> KDTreeROArray;
+
+typedef struct {
+    float lower, upper;
+} interval;
+
+// let the compiler know that this is a names of classes.
+class KDTreeNode;
+class SearchRecord;
+
+struct KDTreeResult {
+public:
+    float dis;  // square distance
+    int idx;    // neighbor index
+};
+
+class KDTreeResultVector : public std::vector<KDTreeResult> {
+// inherit a std::vector<KDTreeResult>
+// but, optionally maintain it in heap form as a priority
+// queue.
+public:
+    // add one new element to the list of results, and
+    // keep it in heap order.  To keep it in ordinary, as inserted,
+    // order, then simply use push_back() as inherited
+    // via std::vector<>
+
+    void push_element_and_heapify(KDTreeResult&);
+    float replace_maxpri_elt_return_new_maxpri(KDTreeResult&);
+
+    float max_value();
+    // return the distance which has the maximum value of all on list,
+    // assuming that ALL insertions were made by
+    // push_element_and_heapify()
+};
+
+class KDTreeImpl {
+public:
+    const KDTreeArray& the_data;
+    // "the_data" is a reference to the underlying multi_array of the
+    // data to be included in the tree.
+    //
+    // NOTE: this structure does *NOT* own the storage underlying this.
+    // Hence, it would be a very bad idea to change the underlying data
+    // during use of the search facilities of this tree.
+    // Also, the user must deallocate the memory underlying it.
+
+
+    const int N;          // number of data points
+    int dim;
+    bool sort_results;    // sorting result?
+    const bool rearrange; // are we rearranging?
+
+public:
+
+    // constructor, has optional 'dim_in' feature, to use only
+    // first 'dim_in' components for definition of nearest neighbors.
+    KDTreeImpl(KDTreeArray& data_in, bool rearrange_in = true, int dim_in=-1);
+
+    ~KDTreeImpl();
+
+    void n_nearest_brute_force(std::vector<float>& qv, int nn, KDTreeResultVector& result);
+    // search for n nearest to a given query vector 'qv' usin
+    // exhaustive slow search.  For debugging, usually.
+
+    void n_nearest(std::vector<float>& qv, int nn, KDTreeResultVector& result);
+    // search for n nearest to a given query vector 'qv'.
+
+    void n_nearest_around_point(int idxin, int correltime, int nn,
+            KDTreeResultVector& result);
+    // search for 'nn' nearest to point [idxin] of the input data, excluding
+    // neighbors within correltime
+
+    void r_nearest(std::vector<float>& qv, float r2, KDTreeResultVector& result);
+    // search for all neighbors in ball of size (square Euclidean distance)
+    // r2. Return number of neighbors in 'result.size()',
+
+    void r_nearest_around_point(int idxin, int correltime, float r2,
+            KDTreeResultVector& result);
+    // like 'r_nearest', but around existing point, with decorrelation
+    // interval.
+
+    int r_count(std::vector<float>& qv, float r2);
+    // count number of neighbors within square distance r2.
+
+    int r_count_around_point(int idxin, int correltime, float r2);
+    // like r_count, c
+
+    bool ok() {return root;}
+
+    friend class KDTreeNode;
+    friend class SearchRecord;
+
+private:
+
+    KDTreeNode* root; // the root pointer
+
+    const KDTreeArray* data;
+    // pointing either to the_data or an internal
+    // rearranged data as necessary
+
+    std::vector<int> ind;
+    // the index for the tree leaves.  Data in a leaf with bounds [l, u] are
+    // in  'the_data[ind[l], *] to the_data[ind[u], *]
+
+    KDTreeArray rearranged_data;
+    // if rearrange is true then this is the rearranged data storage.
+
+    static const int bucketsize = 12;  // global constant.
+
+private:
+    void set_data(KDTreeArray& din);
+    void build_tree(); // builds the tree.  Used upon construction.
+    KDTreeNode* build_tree_for_range(int l, int u, KDTreeNode* parent);
+    void select_on_coordinate(int c, int k, int l, int u);
+    int select_on_coordinate_value(int c, float alpha, int l, int u);
+    void spread_in_coordinate(int c, int l, int u, interval& interv);
+};
+
+class KDTreeNode {
+public:
+    KDTreeNode(int dim);
+    ~KDTreeNode();
+
+private:
+    // visible to self and KDTree.
+    friend class KDTreeImpl;  // allow kdtree to access private data
+
+    int cut_dim;                                 // dimension to cut;
+    float cut_val, cut_val_left, cut_val_right;  //cut value
+    int l, u;  // extents in index array for searching
+
+    std::vector<interval> box; // [min, max] of the box enclosing all points
+
+    KDTreeNode *left, *right;  // pointers to left and right nodes.
+
+    void search(SearchRecord& sr);
+    // recursive innermost core routine for searching..
+
+    bool box_in_search_range(SearchRecord& sr);
+    // return true if the bounding box for this node is within the
+    // search range given by the searchvector and maximum ballsize in 'sr'.
+
+    // void check_query_in_bound(SearchRecord& sr); // debugging only
+
+    // for processing final buckets.
+    void process_terminal_node(SearchRecord& sr);
+    void process_terminal_node_fixedball(SearchRecord& sr);
+};
 
 inline float squared(const float x) {
     return(x*x);
@@ -45,9 +205,9 @@ float KDTreeResultVector::replace_maxpri_elt_return_new_maxpri(KDTreeResult& e) 
     push_heap(begin(), end() );  // and heapify.
     return( (*this)[0].dis );
 }
-  
 
-KDTree::KDTree(KDTreeArray& data_in, bool rearrange_in, int dim_in)
+
+KDTreeImpl::KDTreeImpl(KDTreeArray& data_in, bool rearrange_in, int dim_in)
 : the_data(data_in),
         N  ( data_in.shape()[0] ),
         dim( data_in.shape()[1] ),
@@ -67,7 +227,7 @@ KDTree::KDTree(KDTreeArray& data_in, bool rearrange_in, int dim_in)
         // if we have a rearranged tree.
         // allocate the memory for it.
         rearranged_data.resize( boost::extents[N][dim] );
-          
+
         // permute the data for it.
         for (int i=0; i<N; i++) {
             for (int j=0; j<dim; j++) {
@@ -81,18 +241,16 @@ KDTree::KDTree(KDTreeArray& data_in, bool rearrange_in, int dim_in)
     }
 }
 
-// destructor
-KDTree::~KDTree() {
+KDTreeImpl::~KDTreeImpl() {
     delete root;
 }
 
-// building routines
-void KDTree::build_tree() {
+void KDTreeImpl::build_tree() {
     for (int i=0; i<N; i++) ind[i] = i;
     root = build_tree_for_range(0, N-1, NULL);
 }
 
-KDTreeNode* KDTree::build_tree_for_range(int l, int u, KDTreeNode* parent) {
+KDTreeNode* KDTreeImpl::build_tree_for_range(int l, int u, KDTreeNode* parent) {
     // recursive function to build
     KDTreeNode* node = new KDTreeNode(dim);
     // the newly created node.
@@ -180,7 +338,7 @@ KDTreeNode* KDTree::build_tree_for_range(int l, int u, KDTreeNode* parent) {
             for (int i=0; i<dim; i++) {
                 node->box[i].upper = std::max(node->left->box[i].upper,
                         node->right->box[i].upper);
-                  
+
                 node->box[i].lower = std::min(node->left->box[i].lower,
                         node->right->box[i].lower);
             }
@@ -188,8 +346,8 @@ KDTreeNode* KDTree::build_tree_for_range(int l, int u, KDTreeNode* parent) {
     }
     return(node);
 }
-  
-void KDTree::spread_in_coordinate(int c, int l, int u, interval& interv) {
+
+void KDTreeImpl::spread_in_coordinate(int c, int l, int u, interval& interv) {
     // return the minimum and maximum of the indexed data between l and u in
     // smin_out and smax_out.
     float smin, smax;
@@ -208,7 +366,7 @@ void KDTree::spread_in_coordinate(int c, int l, int u, interval& interv) {
         //      lmax = t;
         }
         if (smin > lmin) smin = lmin;
-        if (smax <lmax) smax = lmax;
+        if (smax < lmax) smax = lmax;
     }
     // is there one more element?
     if (i == u+1) {
@@ -219,8 +377,8 @@ void KDTree::spread_in_coordinate(int c, int l, int u, interval& interv) {
     interv.lower = smin;
     interv.upper = smax;
 }
-  
-void KDTree::select_on_coordinate(int c, int k, int l, int u) {
+
+void KDTreeImpl::select_on_coordinate(int c, int k, int l, int u) {
     //
     //  Move indices in ind[l..u] so that the elements in [l .. k]
     //  are less than the [k+1..u] elmeents, viewed across dimension 'c'.
@@ -239,8 +397,8 @@ void KDTree::select_on_coordinate(int c, int k, int l, int u) {
         if (m >= k) u = m-1;
     } // while loop
 }
-  
-int KDTree::select_on_coordinate_value(int c, float alpha, int l, int u) {
+
+int KDTreeImpl::select_on_coordinate_value(int c, float alpha, int l, int u) {
     //  Move indices in ind[l..u] so that the elements in [l .. return]
     //  are <= alpha, and hence are less than the [return+1..u]
     //  elments, viewed across dimension 'c'.
@@ -259,7 +417,7 @@ int KDTree::select_on_coordinate_value(int c, float alpha, int l, int u) {
     else
         return(lb-1);
 }
-  
+
 // search record substructure
 // one of these is created for each search.
 // this holds useful information to be used
@@ -267,7 +425,7 @@ int KDTree::select_on_coordinate_value(int c, float alpha, int l, int u) {
 static const float infinity = 1.0e38;
 class SearchRecord {
 private:
-    friend class KDTree;
+    friend class KDTreeImpl;
     friend class KDTreeNode;
     std::vector<float>& qv;
     int dim;
@@ -279,20 +437,20 @@ private:
     const KDTreeArray* data;
     const std::vector<int>& ind;
 public:
-    SearchRecord(std::vector<float>& qv_in, KDTree& tree_in,
-            KDTreeResultVector& result_in) :
-                qv(qv_in),
-                        result(result_in),
-                        data(tree_in.data),
-                        ind(tree_in.ind) {
+    SearchRecord(std::vector<float>& qv_in, KDTreeImpl& tree_in,
+            KDTreeResultVector& result_in)
+            : qv(qv_in)
+            , result(result_in)
+            , data(tree_in.data)
+            , ind(tree_in.ind) {
                 dim = tree_in.dim;
                 rearrange = tree_in.rearrange;
                 ballsize = infinity;
                 nn = 0;
-                };
+            }
 };
-  
-void KDTree::n_nearest_brute_force(std::vector<float>& qv, int nn, KDTreeResultVector& result) {
+
+void KDTreeImpl::n_nearest_brute_force(std::vector<float>& qv, int nn, KDTreeResultVector& result) {
     result.clear();
     for (int i=0; i<N; i++) {
         float dis = 0.0;
@@ -306,9 +464,9 @@ void KDTree::n_nearest_brute_force(std::vector<float>& qv, int nn, KDTreeResultV
     }
     sort(result.begin(), result.end() );
 }
-  
-  
-void KDTree::n_nearest(std::vector<float>& qv, int nn, KDTreeResultVector& result) {
+
+
+void KDTreeImpl::n_nearest(std::vector<float>& qv, int nn, KDTreeResultVector& result) {
     SearchRecord sr(qv, *this, result);
     std::vector<float> vdiff(dim, 0.0);
     result.clear();
@@ -316,10 +474,10 @@ void KDTree::n_nearest(std::vector<float>& qv, int nn, KDTreeResultVector& resul
     sr.correltime = 0;
     sr.nn = nn;
     root->search(sr);
-    if (sort_results) sort(result.begin(), result.end()); 
-}  
-  
-void KDTree::n_nearest_around_point(int idxin, int correltime, int nn,
+    if (sort_results) sort(result.begin(), result.end());
+}
+
+void KDTreeImpl::n_nearest_around_point(int idxin, int correltime, int nn,
         KDTreeResultVector& result) {
     std::vector<float> qv(dim); //  query vector
     result.clear();
@@ -337,8 +495,8 @@ void KDTree::n_nearest_around_point(int idxin, int correltime, int nn,
     }
     if (sort_results) sort(result.begin(), result.end());
 }
-  
-void KDTree::r_nearest(std::vector<float>& qv, float r2, KDTreeResultVector& result) {
+
+void KDTreeImpl::r_nearest(std::vector<float>& qv, float r2, KDTreeResultVector& result) {
     // search for all within a ball of a certain radius
     SearchRecord sr(qv, *this, result);
     std::vector<float> vdiff(dim, 0.0);
@@ -350,8 +508,8 @@ void KDTree::r_nearest(std::vector<float>& qv, float r2, KDTreeResultVector& res
     root->search(sr);
     if (sort_results) sort(result.begin(), result.end());
 }
-  
-int KDTree::r_count(std::vector<float>& qv, float r2) {
+
+int KDTreeImpl::r_count(std::vector<float>& qv, float r2) {
 {
     KDTreeResultVector result;
     SearchRecord sr(qv, *this, result);
@@ -363,8 +521,8 @@ int KDTree::r_count(std::vector<float>& qv, float r2) {
     return(result.size());
 }
 }
-  
-void KDTree::r_nearest_around_point(int idxin, int correltime, float r2,
+
+void KDTreeImpl::r_nearest_around_point(int idxin, int correltime, float r2,
         KDTreeResultVector& result) {
     std::vector<float> qv(dim);  //  query vector
     result.clear();
@@ -384,7 +542,7 @@ void KDTree::r_nearest_around_point(int idxin, int correltime, float r2,
     if (sort_results) sort(result.begin(), result.end());
 }
 
-int KDTree::r_count_around_point(int idxin, int correltime, float r2) {
+int KDTreeImpl::r_count_around_point(int idxin, int correltime, float r2) {
     std::vector<float> qv(dim);  //  query vector
     for (int i=0; i<dim; i++) {
         qv[i] = the_data[idxin][i];
@@ -439,7 +597,7 @@ void KDTreeNode::search(SearchRecord& sr) {
         }
     } else {
         KDTreeNode *ncloser, *nfarther;
-          
+
         float extra;
         float qval = sr.qv[cut_dim];
         // value of the wall boundary on the cut dimension.
@@ -451,7 +609,7 @@ void KDTreeNode::search(SearchRecord& sr) {
             ncloser = right;
             nfarther = left;
             extra = qval-cut_val_left;
-        };
+        }
         if (ncloser != NULL) ncloser->search(sr);
         if ((nfarther != NULL) && (squared(extra) < sr.ballsize)) {
             // first cut
@@ -463,16 +621,13 @@ void KDTreeNode::search(SearchRecord& sr) {
 }
 
 inline float dis_from_bnd(float x, float amin, float amax) {
-    if (x > amax) {
-        return(x-amax);
-    } else if (x < amin)
-        return (amin-x);
-    else
-        return 0.0;
+    if (x > amax) return(x-amax);
+    else if (x < amin) return (amin-x);
+    else return 0.0;
 }
 
 inline bool KDTreeNode::box_in_search_range(SearchRecord& sr) {
-    // does the bounding box, represented by minbox[*],maxbox[*]
+    // does the bounding box, represented by minbox[*], maxbox[*]
     // have any point which is within 'sr.ballsize' to 'sr.qv'??
     int dim = sr.dim;
     float dis2 =0.0;
@@ -497,7 +652,7 @@ void KDTreeNode::process_terminal_node(SearchRecord& sr) {
     if (debug) {
         /* printf("Processing terminal node %d, %d\n", l, u);
         std::cout << "Query vector = [";
-        for (int i=0; i<dim; i++) std::cout << sr.qv[i] << ',';
+        for (int i=0; i<dim; i++) std::cout << sr.qv[i] << ', ';
         std::cout << "]\n";
         std::cout << "nn = " << nn << '\n';
         check_query_in_bound(sr);*/
@@ -554,12 +709,12 @@ void KDTreeNode::process_terminal_node(SearchRecord& sr) {
         e.idx = indexofi;
         e.dis = dis;
         sr.result.push_element_and_heapify(e);
-        if (debug) std::cout << "unilaterally pushed dis=" << dis;
+        // if (debug) std::cout << "unilaterally pushed dis=" << dis;
         if (sr.result.size() == nn) ballsize = sr.result.max_value();
         // Set the ball radius to the largest on the list (maximum priority).
         if (debug) {
-            std::cout << " ballsize = " << ballsize << "\n";
-            std::cout << "sr.result.size() = "  << sr.result.size() << '\n';
+            // std::cout << " ballsize = " << ballsize << "\n";
+            // std::cout << "sr.result.size() = "  << sr.result.size() << '\n';
         }
         } else {
         //
@@ -572,8 +727,8 @@ void KDTreeNode::process_terminal_node(SearchRecord& sr) {
         e.dis = dis;
         ballsize = sr.result.replace_maxpri_elt_return_new_maxpri(e);
         if (debug) {
-            std::cout << "Replaced maximum dis with dis=" << dis <<
-                    " new ballsize =" << ballsize << '\n';
+            // std::cout << "Replaced maximum dis with dis=" << dis <<
+            //         " new ballsize =" << ballsize << '\n';
         }
         }
     } // main loop
@@ -591,7 +746,7 @@ void KDTreeNode::process_terminal_node_fixedball(SearchRecord& sr) {
         int indexofi = sr.ind[i];
         float dis;
         bool early_exit;
-          
+
         if (rearrange) {
             early_exit = false;
             dis = 0.0;
@@ -638,3 +793,175 @@ void KDTreeNode::process_terminal_node_fixedball(SearchRecord& sr) {
         }
     }
 }
+
+class KDTreeNaive: public KDTree
+{
+public:
+    KDTreeNaive(): m_kdt(NULL) {}
+
+    virtual bool build(const DataArray& data)
+    {
+        if(data.empty()) return false;
+        int n = data.size();
+        int d = data[0].size();
+        m_data.resize(boost::extents[n][d]);
+        for(int i = 0; i < n; i++)
+            for(int j = 0; j < d; j++)
+                m_data[i][j] = data[i][j];
+        m_kdt = new KDTreeImpl(m_data);
+        return ok();
+    }
+
+    virtual int nearest(const Data& query, DataArray& res, int k, float r)
+    {
+        if(!ok()) return 0;
+        int d = query.size();
+        if(d != m_kdt->dim)
+        {
+            printf("[ERROR]query dim(%d) not same as kdtree(%d)\n", d, m_kdt->dim);
+            return 0;
+        }
+        KDTreeResultVector neighbor;
+        auto temp = query;
+        if(k > 0) m_kdt->n_nearest(temp, k, neighbor);
+        else if(r > 0) m_kdt->r_nearest(temp, r * r, neighbor);
+
+        int cnt = neighbor.size();
+        res.resize(cnt);
+        for(int i = 0; i < cnt; i++)
+        {
+            int id = neighbor[i].idx;
+            const auto& p = m_kdt->the_data[id];
+            auto& q = res[i];
+            q.resize(d);
+            for(int j = 0; j < d; j++)
+                q[j] = p[j];
+        }
+        return cnt;
+    }
+
+    bool ok()
+    {
+        return m_kdt && m_kdt->ok();
+    }
+
+private:
+    KDTreeImpl  *m_kdt;
+    KDTreeArray m_data;
+};
+
+#endif//HAVE_BOOST
+
+#if HAVE_ALGLIB
+/*************** How to use this *************
+1. Download alglib code with C++ version at https://www.alglib.net/download.php
+2. Compile alglib code as a static lib
+3. Link alglib with vs_common.
+    set include_directories(<alglib_code>/src),
+    set target_link_libraries() with your static lib such as libalglib.a
+4. Open HAVE_ALGLIB by:
+    add this code: #define HAVE_ALGLIB 1
+    or add in cmakelists: add_definitions(-DHAVE_ALGLIB=1)
+5. recompile vs_common, and set method in createKDTree() to 1
+ *********************************************/
+#include "alglibmisc.h"
+
+class KDTreeAlglib: public KDTree
+{
+public:
+    KDTreeAlglib(): m_init(false) {}
+
+    virtual bool build(const DataArray& data)
+    {
+        if(data.empty()) return false;
+        int n = data.size();
+        int d = data[0].size();
+        std::vector<double> data1D(n * d);
+        int idx = 0;
+        for(int i = 0; i < n; i++)
+            for(int j = 0; j < d; j++)
+                data1D[idx++] = data[i][j];
+        m_data.setcontent(n, d, &data1D[0]);
+        kdtreebuild(m_data, d, 0, 2, m_kdt);
+        m_init = true;
+        return true;
+    }
+
+    virtual int nearest(const Data& query, DataArray& res, int k, float r)
+    {
+        // santy check
+        if(!ok()) return 0;
+        int d = query.size();
+        int kdt_dim = m_kdt.c_ptr()->nx;
+        if(d != kdt_dim)
+        {
+            printf("[ERROR]query dim(%d) not same as kdtree(%d)\n", d, kdt_dim);
+            return 0;
+        }
+        // set input query
+        std::vector<double> temp_query;
+        temp_query.reserve(d);
+        for(auto i : query) temp_query.push_back((double)i);
+        alglib::real_1d_array x;
+        x.setcontent(d, &temp_query[0]);
+
+        // search nearest
+        int cnt = 0;
+        if(k > 0) cnt = alglib::kdtreequeryknn(m_kdt, x, k);
+        else if(r > 0) cnt = alglib::kdtreequeryrnn(m_kdt, x, r);
+        if(cnt <= 0) return 0;
+
+        // parse result
+        alglib::real_2d_array result;
+        alglib::kdtreequeryresultsx(m_kdt, result);
+        int rows = result.rows();
+        int cols = result.cols();
+        res.resize(rows);
+        for(int i = 0; i < rows; i++)
+        {
+            const double* p = result[i];
+            auto& q = res[i];
+            q.resize(cols);
+            for(int j = 0; j < cols; j++)
+                q[j] = p[j];
+        }
+        return rows;
+    }
+
+    bool ok() {return m_init;}
+
+private:
+    bool m_init;
+    alglib::kdtree m_kdt;
+    alglib::real_2d_array m_data;
+};
+
+#endif//HAVE_ALGLIB
+
+std::shared_ptr<KDTree> createKDTree(int method)
+{
+    switch(method)
+    {
+    case 0:
+        #if HAVE_BOOST
+            return std::shared_ptr<KDTree>(new KDTreeNaive);
+        #else
+            printf("[ERROR]Create naive KDTree failed."
+                   " Set HAVE_BOOST=1 to enable it.\n");
+            return std::shared_ptr<KDTree>(NULL);
+        #endif
+    case 1:
+        #if HAVE_ALGLIB
+            return std::shared_ptr<KDTree>(new KDTreeAlglib);
+        #else
+            printf("[ERROR]Create alglib KDTree failed."
+                   " Set HAVE_ALGLIB=1 to enable it.\n");
+            return std::shared_ptr<KDTree>(NULL);
+        #endif
+    default:
+        printf("[ERROR]Unsupported method %d, only support 0, 1\n", method);
+        return std::shared_ptr<KDTree>(NULL);
+    }
+}
+
+} /* namespace vs */

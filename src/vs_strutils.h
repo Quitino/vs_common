@@ -1,15 +1,11 @@
 #ifndef __VS_STRUTILS_H__
 #define __VS_STRUTILS_H__
-
 #include <string>
 #include <sstream>
 #include <vector>
 
-/** \brief judge a line whether a blank line which only contain spaces, tabs, or newlines*/
-bool isBlankLine(const std::string& line);
-
-/** \brief judge a line whether a commend line which head with '#' */
-bool isCommentLine(const std::string& line);
+namespace vs
+{
 
 /** \brief judge if line's header is target*/
 bool match(const std::string& line, const std::string& target);
@@ -49,6 +45,5 @@ T str2num(const std::string &a)
     return res;
 }
 
-
-
-#endif
+} /* namespace vs */
+#endif//__VS_STRUTILS_H__

@@ -1,5 +1,8 @@
-#include "vs_transform.h"
+#include "vs_rot.h"
 #include <math.h>
+
+namespace vs
+{
 
 void quat2rot(const float* q, float *r)
 {
@@ -73,7 +76,7 @@ void quat2euler(const float* q, float *e)
 
     // roll (x-axis rotation)
     e[2] = atan2(2.0 * (qw * qx + qy * qz), 1.0 - 2.0 * (qx * qx + ysqr));
-}   
+}
 
 void euler2rot(const float* e, float *r)
 {
@@ -109,10 +112,11 @@ void euler2quat(const float* e, float *q)
     q[3] = sz * cx * cy - cz * sx * sy;
 }
 
-
 void rot2euler(const float* r, float *e)
 {
     e[0] = atan2(r[1], r[0]);
     e[1] = atan2(-r[2], sqrt(r[5] * r[5] + r[8] * r[8]));
     e[2] = atan2(r[5], r[8]);
 }
+
+} /* namespace vs */

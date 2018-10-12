@@ -1,34 +1,81 @@
 #include "vs_improc.h"
 #include "vs_numeric.h"
+#include <functional>
+
+namespace vs
+{
+
+static cv::Mat grabBgr(const cv::Mat& bgr,
+                       const std::function<uchar(const cv::Vec3b& a)> &foo)
+{
+    cv::Mat res(bgr.size(), CV_8UC1);
+    for(int i=0; i<bgr.rows; i++)
+    {
+        const cv::Vec3b *p_bgr = bgr.ptr<cv::Vec3b>(i);
+        uchar *p_hue = res.ptr<uchar>(i);
+        for(int j=0; j<bgr.cols; j++)
+        {
+            *p_hue++ = foo(*p_bgr++);
+        }
+    }
+    return res;
+}
+
+static auto foo_bgr2hue = [](const cv::Vec3b& a)
+{
+    static int hdiv_table[256];
+    static bool initialized = false;
+    if(!initialized)
+    {
+        hdiv_table[0] = 0;
+        for(int i = 1; i < 256; i++)
+            hdiv_table[i] = cv::saturate_cast<int>((180 << 12)/(6.*i));
+        initialized = true;
+    }
+    int b = a[0];
+    int g = a[1];
+    int r = a[2];
+    int vmin = min3(b, g, r);
+    int v = max3(b, g, r);
+    int diff = v - vmin;
+    int vr = v == r ? -1 : 0;
+    int vg = v == g ? -1 : 0;
+    int h = (vr & (g - b)) +
+        (~vr & ((vg & (b - r + 2 * diff)) + ((~vg) & (r - g + 4 * diff))));
+    h = (h * hdiv_table[diff] + (1 << 11)) >> 12;
+    h += h < 0 ? 180 : 0;
+    return cv::saturate_cast<uchar>(h);
+};
+
+static auto foo_bgr2saturation = [](const cv::Vec3b& a)
+{
+    static int sdiv_table[256];
+    static bool initialized = false;
+    if(!initialized)
+    {
+        sdiv_table[0] = 0;
+        for(int i = 1; i < 256; i++)
+            sdiv_table[i] = cv::saturate_cast<int>((255 << 12)/(1.*i));
+        initialized = true;
+    }
+    int b = a[0];
+    int g = a[1];
+    int r = a[2];
+    int vmin = min3(b, g, r);
+    int v = max3(b, g, r);
+    int diff = v - vmin;
+    int s = (diff * sdiv_table[v] + (1 << (11))) >> 12;
+    return (uchar)s;
+};
 
 cv::Mat bgr2hue(const cv::Mat& bgr)
 {
-    cv::Mat hue(bgr.rows, bgr.cols, CV_8UC1);
-    for(int i=0; i<bgr.rows; i++)
-    {
-        const uchar *p_bgr = bgr.ptr<uchar>(i);
-        uchar *p_hue = hue.ptr<uchar>(i);
-        for(int j=0; j<hue.cols; j++)
-        {
-            uchar b = *p_bgr++;
-            uchar g = *p_bgr++;
-            uchar r = *p_bgr++;
-            uchar amin = min3(b,g,r);
-            uchar amax = max3(b,g,r);
-            uchar h;
-            if(amax == amin)
-                // h = 0;
-                h = 255;
-            else if(amax == r)
-                h = ((int)g-b)*30/(amax-amin) + (g >= b ? 0:180);
-            else if(amax == g)
-                h = ((int)b-r)*30/(amax-amin) + 60;
-            else
-                h = ((int)r-g)*30/(amax-amin) + 120;
-            *p_hue++ = h;
-        }
-    }
-    return hue;
+    return grabBgr(bgr, foo_bgr2hue);
+}
+
+cv::Mat bgr2saturation(const cv::Mat& bgr)
+{
+    return grabBgr(bgr, foo_bgr2saturation);
 }
 
 cv::Mat grabRed(const cv::Mat& bgr)
@@ -43,8 +90,8 @@ cv::Mat grabRed(const cv::Mat& bgr)
             uchar b = *p_bgr++;
             uchar g = *p_bgr++;
             uchar r = *p_bgr++;
-            uchar amin = min3(b,g,r);
-            uchar amax = max3(b,g,r);
+            uchar amin = min3(b, g, r);
+            uchar amax = max3(b, g, r);
             uchar h;
             if(amax == amin)
                 // h = 0;
@@ -101,13 +148,12 @@ cv::Mat grabRedMl(const cv::Mat& bgr)
             *p_hue++ = o1 < o2 ? 255 : 0;
         }
     }
-    return red; 
+    return red;
 }
 
 void regionFilter(cv::Mat& img, int minRegion, int maxRegion)
 {
-    using namespace cv;
-    typedef cv::Point_<short> Point2s;
+    typedef cv::Point_<int16_t> Point2s;
     int width = img.cols, height = img.rows, npixels = width*height;
     size_t bufSize = npixels*(int)(sizeof(Point2s) + sizeof(int) + sizeof(uchar));
     cv::Mat _buf;
@@ -142,7 +188,7 @@ void regionFilter(cv::Mat& img, int minRegion, int maxRegion)
                 else
                 {
                     Point2s* ws = wbuf; // initialize wavefront
-                    Point2s p((short)j, (short)i);  // current pixel
+                    Point2s p((int16_t)j, (int16_t)i);  // current pixel
                     curlabel++; // next label
                     int count = 0;  // current region size
                     ls[j] = curlabel;
@@ -205,8 +251,7 @@ void regionFilter(cv::Mat& img, int minRegion, int maxRegion)
 
 void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, int minRegion, int maxRegion)
 {
-    using namespace cv;
-    typedef cv::Point_<short> Point2s;
+    typedef cv::Point_<int16_t> Point2s;
     bboxes.clear();
     int width = img.cols, height = img.rows, npixels = width*height;
     size_t bufSize = npixels*(int)(sizeof(Point2s) + sizeof(int) + sizeof(uchar));
@@ -242,7 +287,7 @@ void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, int minRegion, in
                 else
                 {
                     Point2s* ws = wbuf; // initialize wavefront
-                    Point2s p((short)j, (short)i);  // current pixel
+                    Point2s p((int16_t)j, (int16_t)i);  // current pixel
                     curlabel++; // next label
                     int count = 0;  // current region size
                     ls[j] = curlabel;
@@ -297,12 +342,12 @@ void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, int minRegion, in
                     {
                         // check bbox
                         int min_x = 60000, min_y = 60000, max_x = 0, max_y = 0;
-                        for(const auto& p:pt_list)
+                        for(const auto& tp : pt_list)
                         {
-                            if(min_x > p.x) min_x = p.x;
-                            else if(max_x < p.x) max_x = p.x;
-                            if(min_y > p.y) min_y = p.y;
-                            else if(max_y < p.y) max_y = p.y;
+                            if(min_x > tp.x) min_x = tp.x;
+                            else if(max_x < tp.x) max_x = tp.x;
+                            if(min_y > tp.y) min_y = tp.y;
+                            else if(max_y < tp.y) max_y = tp.y;
                         }
                         bboxes.push_back(cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y));
                         rtype[ls[j]] = 0;   // large region label
@@ -314,10 +359,10 @@ void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, int minRegion, in
     return;
 }
 
-void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, std::vector<cv::Point2f>& centers, int minRegion, int maxRegion)
+void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes,
+                  std::vector<cv::Point2f>& centers, int minRegion, int maxRegion)
 {
-    using namespace cv;
-    typedef cv::Point_<short> Point2s;
+    typedef cv::Point_<int16_t> Point2s;
     bboxes.clear();
     centers.clear();
     int width = img.cols, height = img.rows, npixels = width*height;
@@ -354,7 +399,7 @@ void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, std::vector<cv::P
                 else
                 {
                     Point2s* ws = wbuf; // initialize wavefront
-                    Point2s p((short)j, (short)i);  // current pixel
+                    Point2s p((int16_t)j, (int16_t)i);  // current pixel
                     curlabel++; // next label
                     int count = 0;  // current region size
                     ls[j] = curlabel;
@@ -410,14 +455,14 @@ void regionFilter(cv::Mat& img, std::vector<cv::Rect>& bboxes, std::vector<cv::P
                         // check bbox
                         int min_x = 60000, min_y = 60000, max_x = 0, max_y = 0;
                         float xsum = 0, ysum = 0;
-                        for(const auto& p:pt_list)
+                        for(const auto& tp : pt_list)
                         {
-                            if(min_x > p.x) min_x = p.x;
-                            else if(max_x < p.x) max_x = p.x;
-                            if(min_y > p.y) min_y = p.y;
-                            else if(max_y < p.y) max_y = p.y;
-                            xsum += p.x;
-                            ysum += p.y;
+                            if(min_x > tp.x) min_x = tp.x;
+                            else if(max_x < tp.x) max_x = tp.x;
+                            if(min_y > tp.y) min_y = tp.y;
+                            else if(max_y < tp.y) max_y = tp.y;
+                            xsum += tp.x;
+                            ysum += tp.y;
                         }
                         bboxes.push_back(cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y));
                         float n = pt_list.size();
@@ -457,7 +502,7 @@ void sobelFilter(const cv::Mat& img, cv::Mat& grad_bw, int grad_thres)
 #else
     uchar const *di = (uchar*) img.data;
     uchar *db = (uchar*) grad_bw.data;
-    uchar const *p0=di,*p1=p0+w,*p2=p1+w;
+    uchar const *p0=di, *p1=p0+w, *p2=p1+w;
     uchar *pb=db+w+1;
     for(int i=1; i<img.rows-1; i++)
     {
@@ -484,3 +529,15 @@ void sobelFilter(const cv::Mat& img, cv::Mat& grad_bw, int grad_thres)
     }
 #endif
 }
+
+void histn(const cv::Mat& gray, double normalized_hist[256], int step)
+{
+    for(int i=0; i<256; i++) normalized_hist[i] = 0;
+    const int N = gray.rows * gray.cols;
+    uchar* p = (uchar *)gray.data;
+    unsigned int cnt = N/step;
+    for(unsigned int i = 0; i < cnt; i++, p += step) normalized_hist[*p]++;
+    for(int i = 0; i < 256; i++) normalized_hist[i] /= cnt;
+}
+
+} /* namespace vs */

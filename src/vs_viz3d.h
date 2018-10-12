@@ -5,12 +5,25 @@
 #include <thread>
 #include <map>
 
-class Viz3dThread
+namespace vs
+{
+
+class Viz3D
 {
 public:
-    Viz3dThread():thread_ptr(new std::thread(std::bind(&Viz3dThread::threadFoo, this)))
+    Viz3D()
+        : thread_ptr(new std::thread(std::bind(&Viz3D::run, this)))
+        , stop(false)
     {
         viz.setBackgroundColor();
+    }
+
+    ~Viz3D()
+    {
+        stop = true;
+        thread_ptr->join();
+        viz.removeAllWidgets();
+        widget_table.clear();
     }
 
     void updateWidget(const std::string& id, const cv::viz::Widget& w)
@@ -20,24 +33,33 @@ public:
 
 private:
     cv::viz::Viz3d viz;
-    std::map<std::string,cv::viz::Widget> widget_table;
+    std::map<std::string, cv::viz::Widget> widget_table;
     std::shared_ptr<std::thread> thread_ptr;
+    bool stop;
 
-    void threadFoo()
+    void run()
     {
-        while(!viz.wasStopped())
+        try
         {
-            if(!widget_table.empty())
+            while(!viz.wasStopped() && !stop)
             {
-                for(const auto& m:widget_table)
+                if(!widget_table.empty())
                 {
-                    viz.showWidget(m.first,m.second);
+                    for(const auto& m : widget_table)
+                    {
+                        viz.showWidget(m.first, m.second);
+                    }
+                    viz.spinOnce();
                 }
-                viz.spinOnce();
+                usleep(100000);
             }
-            usleep(100000);
+        }
+        catch(...)
+        {
+            printf("[ERROR]:Viz3d thread quit expectedly.\n");
         }
     }
 };
 
-#endif
+} /* namespace vs */
+#endif//__VS_VIZ3D_H__
