@@ -36,6 +36,19 @@ inline cv::Point2f project2line(const cv::Point2f& p1, const cv::Point2f& p2, co
     return p1 + (p - p1).dot(d) * d;
 }
 
+inline float dist2lineseg(const cv::Point2f& p1, const cv::Point2f& p2, const cv::Point2f& p)
+{
+    cv::Point2f m = project2line(p1, p2, p);
+    auto v1 = m - p1;
+    auto v2 = m - p2;
+    if(v1.dot(v2) < 0)
+        return dist(p, m);
+    else if(fabs(v1.x) + fabs(v1.y) < fabs(v2.x) + fabs(v2.y))
+        return dist(p, p1);
+    else
+        return dist(p, p2);
+}
+
 /** \brief check if two line direction are parallel
     \param[in] dir1: UNIT direction vector
     \param[in] dir2: UNIT direction vector

@@ -227,14 +227,14 @@ bool ICL(const LineSegment2DList& model, const LineSegment2DList& target,
 #endif
 }
 
-bool ICL(const LineSegment2DList& model, const LineSegment2DList& target,
-         cv::Point3f& transform, std::map<int, int>& match_ids,
+bool ICL(const LineSegment2DList &model, const LineSegment2DList &target,
+         cv::Point3f &transform, std::map<int, int> &match_ids, cv::Mat &info,
          bool use_init_guess, double thres_angle, double thres_dist, bool proj_affine)
 {
     cv::Point3f raw_transform = transform;
     LineSegment2DList lines = target;
     Eigen::Matrix3d T = Eigen::Matrix3d::Identity();
-    if(use_init_guess)
+    if (use_init_guess)
     {
         T = cvtIsom(transform);
         transformLines(lines, T);
@@ -248,22 +248,22 @@ bool ICL(const LineSegment2DList& model, const LineSegment2DList& target,
         list2.clear();
         match_ids.clear();
         // data association
-        for(size_t i2 = 0; i2 < lines.size(); i2 ++)
+        for (size_t i2 = 0; i2 < lines.size(); i2++)
         {
-            const auto& l2 = lines[i2];
+            const auto &l2 = lines[i2];
             double min_dist = 1e10;
             int min_idx = -1;
-            for(size_t i = 0; i < model.size(); i++)
+            for (size_t i = 0; i < model.size(); i++)
             {
-                const auto& l1 = model[i];
+                const auto &l1 = model[i];
                 double dist = distance(l1, l2, thres_angle, thres_dist, 0.1);
-                if(dist < min_dist)
+                if (dist < min_dist)
                 {
                     min_dist = dist;
                     min_idx = i;
                 }
             }
-            if(min_idx >= 0)
+            if (min_idx >= 0)
             {
                 list1.push_back(model[min_idx]);
                 list2.push_back(l2);
@@ -272,31 +272,39 @@ bool ICL(const LineSegment2DList& model, const LineSegment2DList& target,
         }
         // solve
         cv::Point3f temp_transform;
-        if(!solveTransform(list1, list2, temp_transform)) return false;
+        if (!solveTransform(list1, list2, temp_transform, info))
+            return false;
         solve_once = true;
 
         Eigen::Matrix3d temp_T = cvtIsom(temp_transform);
         T = temp_T * T;
         transformLines(lines, temp_T);
-        if(fabs(temp_transform.z) < 1e-3
-            && fabs(temp_transform.x) < 1e-3
-            && fabs(temp_transform.y) < 1e-3) break;
+        if (fabs(temp_transform.z) < 1e-3 && fabs(temp_transform.x) < 1e-3 && fabs(temp_transform.y) < 1e-3)
+            break;
 
         thres_angle = std::max(thres_angle / 2, 0.03);
         thres_dist = std::max(thres_dist / 2, 0.05);
     }
-    if(solve_once)
+    if (solve_once)
     {
         transform.x = T(0, 2);
         transform.y = T(1, 2);
         transform.z = atan2(T(1, 0), T(0, 0));
-        if(proj_affine)
+        if (proj_affine)
         {
             projAffine(transform, raw_transform, list1);
         }
         return true;
     }
     return false;
+}
+
+bool ICL(const LineSegment2DList &model, const LineSegment2DList &target,
+         cv::Point3f &transform, std::map<int, int> &match_ids,
+         bool use_init_guess, double thres_angle, double thres_dist, bool proj_affine)
+{
+    static cv::Mat info;
+    return ICL(model, target, transform, match_ids, info, use_init_guess, thres_angle, thres_dist, proj_affine);
 }
 
 class LineSegStoreList: public LineSegment2DNN

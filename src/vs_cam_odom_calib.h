@@ -25,7 +25,7 @@ namespace vs
 // p_o = T_c_o * p_c
 bool camOdomCalib(const std::vector<Eigen::Isometry3d>& cam_poses,
                     const std::vector<Eigen::Isometry3d>& odom_poses,
-                    Eigen::Isometry3d& T_c_o);
+                    Eigen::Isometry3d& T_c_o, int method = 1, bool verbose = true);
 
 } /* namespace vs */
 

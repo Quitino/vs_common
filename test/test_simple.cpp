@@ -14,6 +14,26 @@ void print(float *a, int n)
     std::cout << std::endl;
 }
 
+void testypr()
+{
+    // R << -0.535446, -0.42925, 0.727353, -0.844511, 0.262012, -0.467066, 0.00991299, -0.864346, -0.502799;
+    // R << -0.46628, -0.490853, 0.735966, -0.883848, 0.223353, -0.411007, 0.0373635, -0.842126, -0.537984;
+    // R << -0.799181, -0.0029138, 0.601083, -0.512334, 0.526283, -0.678631, -0.314363, -0.850304, -0.422088;
+    Eigen::Matrix3d R_c_b;
+    R_c_b << -0.6081574621585628, -0.4210112961753338, 0.6729739888833909,
+            -0.7936767583288918, 0.3065860409203642, -0.5254352508171864,
+            0.01488974510861129, -0.8536711826022607, -0.5205994693476541;
+    std::cout << "rpy: " << Rbw2rpy(R_c_b * typicalRot(ROT_FLU2RDF)).transpose()*57.29578 << std::endl;
+    // auto ypr = R.eulerAngles(2, 1, 0);
+    // std::cout << "ypr: " << ypr.transpose()*57.29578 << std::endl;
+    // auto R2 = (Eigen::AngleAxisd(ypr(0), Eigen::Vector3d::UnitZ()) * Eigen::AngleAxisd(ypr(1), Eigen::Vector3d::UnitY()) * Eigen::AngleAxisd(ypr(2), Eigen::Vector3d::UnitX())).toRotationMatrix();
+    // std::cout << "R: " << R << std::endl;
+    // std::cout << "R2: " << R2 << std::endl;
+
+    // auto Ryz = (Eigen::AngleAxisd(ypr(0), Eigen::Vector3d::UnitZ()) * Eigen::AngleAxisd(ypr(1), Eigen::Vector3d::UnitY())).toRotationMatrix();
+
+}
+
 void test1()
 {
     PrintHeader();
@@ -264,41 +284,69 @@ void testCamOdomCalib()
     PrintHeader();
     using namespace Eigen;
     Isometry3d T_c_o = Isometry3d::Identity();
-    T_c_o.linear() = (AngleAxisd(0.05, Vector3d::UnitZ())
-                     * AngleAxisd(1.57, Vector3d::UnitY())
-                     * AngleAxisd(-0.02, Vector3d::UnitX())).toRotationMatrix();
-    T_c_o.translation() << 0.5, -0.01, 0.25;
-
-    Isometry3d T_m = Isometry3d::Identity();
-    T_m.linear() = AngleAxisd(0.01, Vector3d::UnitZ()).toRotationMatrix();
-    T_m.translation() << 0.5, 0.4, 0;
-
-    std::vector<Eigen::Isometry3d> cam_poses, odom_poses;
-    Isometry3d T_o = Isometry3d::Identity();
-    for(double t = - 0.1; t <= 0.1; t += 0.02)
+    // double ypr[3]{1.005730, -1.9, 2.097663};
+    std::vector<std::vector<double>> ypr_test_samples{
+        {1.00573, 0.5, 1.04393},
+        {1.005730, -1.9, 2.097663},
+        {1.00573, -3, 1.04393},
+        {1.00573, 3, 1.04393},
+        {0.2, 3.14, -2},
+        {3.14, - 3.14, 3.14}
+        };
+    int success_cnt = 0;
+    for (size_t i = 0; i < ypr_test_samples.size(); i++)
     {
-        T_o.translation() << t, 0, 0;
-        Isometry3d T_c_m = T_m.inverse() * T_o * T_c_o;
-        odom_poses.push_back(T_o);
-        cam_poses.push_back(T_c_m);
-    }
-    T_o.translation() << 0.1, 0.2, 0;
-    for(double t = -0.1; t <= 0.1; t += 0.02)
-    {
-        T_o.linear() = AngleAxisd(t, Vector3d::UnitZ()).toRotationMatrix();
-        Isometry3d T_c_m = T_m.inverse() * T_o * T_c_o;
-        // std::cout<<"ypr1:"<<T_o.linear().transpose().eulerAngles(0, 1, 2).transpose()<<std::endl;
-        // std::cout<<"ypr:"<<T_o.linear().eulerAngles(2, 1, 0).transpose()<<std::endl;
-        // std::cout<<"T:"<<T_o.matrix()<<std::endl<<std::endl;
-        odom_poses.push_back(T_o);
-        cam_poses.push_back(T_c_m);
-    }
+        auto &ypr = ypr_test_samples[i];
+        T_c_o.linear() = (AngleAxisd(ypr[0], Vector3d::UnitZ()) * AngleAxisd(ypr[1], Vector3d::UnitY()) * AngleAxisd(ypr[2], Vector3d::UnitX())).toRotationMatrix();
+        T_c_o.translation() << 0.5, -0.01, 0.25;
 
-    Isometry3d T_calib = Eigen::Isometry3d::Identity();
-    bool ok = camOdomCalib(cam_poses, odom_poses, T_calib);
-    std::cout<<"Real T_c_o:"<<std::endl<<T_c_o.matrix()<<std::endl<<std::endl;
-    std::cout<<"Calib T_c_o:"<<ok<<std::endl<<T_calib.matrix()<<std::endl<<std::endl;
-    std::cout<<"Diff:"<<std::endl<<(T_calib.inverse()*T_c_o).matrix()<<std::endl<<std::endl;
+        Isometry3d T_m = Isometry3d::Identity();
+        T_m.linear() = AngleAxisd(randDouble(-10,10), Vector3d::UnitZ()).toRotationMatrix();
+        T_m.translation() << 0.5, 0.4, 0;
+
+        std::vector<Eigen::Isometry3d> cam_poses, odom_poses;
+        Isometry3d T_o = Isometry3d::Identity();
+        for(double t = - 1; t <= 1; t += 0.02)
+        {
+            T_o.translation() << t, t, 0;
+            T_o.linear() = AngleAxisd(t, Vector3d::UnitZ()).toRotationMatrix();
+            Isometry3d T_c_m = T_m.inverse() * T_o * T_c_o;
+            odom_poses.push_back(T_o);
+            cam_poses.push_back(T_c_m);
+        }
+        T_o.translation() << 0.1, 0.2, 0;
+        for(double t = -1.0; t <= 1.0; t += 0.02)
+        {
+            T_o.linear() = AngleAxisd(t, Vector3d::UnitZ()).toRotationMatrix();
+            Isometry3d T_c_m = T_m.inverse() * T_o * T_c_o;
+            odom_poses.push_back(T_o);
+            cam_poses.push_back(T_c_m);
+        }
+
+        Isometry3d T_calib = Eigen::Isometry3d::Identity();
+        bool ok = camOdomCalib(cam_poses, odom_poses, T_calib, 1);
+        // std::cout<<"Real T_c_o:"<<std::endl<<T_c_o.matrix()<<std::endl<<std::endl;
+        // std::cout<<"Calib T_c_o:"<<ok<<std::endl<<T_calib.matrix()<<std::endl<<std::endl;
+        // std::cout<<"Diff:"<<std::endl<<(T_calib.inverse()*T_c_o).matrix()<<std::endl<<std::endl;
+        // std::cout << "T_calib.inverse() * T_c_o).matrix().norm(): " << (T_calib.inverse() * T_c_o).matrix().norm() << std::endl;
+        bool success = ok ? (((T_calib.inverse() * T_c_o).matrix() - Eigen::Matrix4d::Identity()).norm() < 1e-6) : false;
+        if (success)
+            success_cnt++;
+        else
+        {
+            std::cout << "test sample: " << ypr_test_samples[i] << "failed." << std::endl;
+        }
+    }
+    std::cout << "test    samples numbers: " << ypr_test_samples.size() << std::endl;
+    std::cout << "success samples numbers: " << success_cnt << std::endl;
+}
+
+void testatan2()
+{
+    std::cout << "atan2(1,1) : " << atan2(1, 1) << std::endl;
+    std::cout << "atan2(-1,1) : " << atan2(-1, 1) << std::endl;
+    std::cout << "atan2(1,-1) : " << atan2(1, -1) << std::endl;
+    std::cout << "atan2(-1,-1) : " << atan2(-1, -1) << std::endl;
 }
 
 void testColor(int argc, char** argv)
@@ -412,7 +460,7 @@ void testLaneDetect(int argc, char** argv)
         img = timg.rowRange(roi_row, img.rows);
     #endif
         LaneList lanes;
-        laneDetect(img, lanes, K_roi, T_c_b, 3, 1);
+        laneDetect(img, lanes, K_roi, T_c_b, 3, 0.05, 0.18, 1);
         static bool halt = true;
         uchar key = cv::waitKey(halt ? 0 : 10);
         if(key == 27) break;
@@ -629,6 +677,31 @@ std::vector<double> foo()
     return a;
 }
 
+void testMaxQueue()
+{
+    MaxQueue<int> fifo;
+    auto f = [](const MaxQueue<int>& fifo)
+    {
+        printf("queue:[");
+        for(auto i : fifo.data()) printf("%d ", i);
+        printf("] max:%d\n", fifo.max());
+    };
+    fifo.push(1); f(fifo);
+    fifo.push(3); f(fifo);
+    fifo.push(2); f(fifo);
+    fifo.push(5); f(fifo);
+    fifo.push(5); f(fifo);
+    fifo.push(4); f(fifo);
+    fifo.push(2); f(fifo);
+    fifo.pop(); f(fifo);
+    fifo.pop(); f(fifo);
+    fifo.pop(); f(fifo);
+    fifo.pop(); f(fifo);
+    fifo.pop(); f(fifo);
+    fifo.pop(); f(fifo);
+    fifo.pop(); f(fifo);
+}
+
 int main(int argc, char** argv)
 {
     // test1();
@@ -643,7 +716,7 @@ int main(int argc, char** argv)
     // testLineMatch2();
     // testCamOdomCalib();
     // testColor(argc, argv);
-    testLaneDetect(argc, argv);
+    // testLaneDetect(argc, argv);
     // testCamCapture();
     // testUndistortImages();
     // testTimeBuffer();
@@ -652,6 +725,7 @@ int main(int argc, char** argv)
     // testSyslog();
     // testRandSample();
     // testKDTree();
+    testypr();
+    // testatan2();
+    // testMaxQueue();
 }
-
-

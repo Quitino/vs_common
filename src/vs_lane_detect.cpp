@@ -14,7 +14,8 @@ namespace vs
 static void removeInvalid(std::vector<cv::Vec4f>& lines, const cv::Mat& mask);
 
 static void detectLane(std::vector<cv::Vec4f>& lines, const cv::Mat& mask,
-                       LaneList& lanes, const cv::Mat& K, const cv::Mat& T_c_b);
+                       LaneList& lanes, const cv::Mat& K, const cv::Mat& T_c_b,
+                       float min_lane_w, float max_lane_w, float max_lane_x);
 
 static void mergeLane(LaneList& lanes, const cv::Mat& mask);
 
@@ -22,7 +23,7 @@ static cv::Mat calLsdImage(const cv::Mat& img, int method = 1);
 
 int laneDetect(const cv::Mat& img, LaneList& lanes,
                const cv::Mat& K, const cv::Mat& T_c_b,
-               int lane_type, bool draw)
+               int lane_type, float min_lane_w, float max_lane_w, bool draw)
 {
     if(img.channels() != 3)
     {
@@ -63,7 +64,7 @@ int laneDetect(const cv::Mat& img, LaneList& lanes,
     mergeLine(lines, 0, 0.996f, 3.0f, 0.0f, 5.0f);
 
     // detect lane
-    detectLane(lines, color_mask, lanes, K, T_c_b);
+    detectLane(lines, color_mask, lanes, K, T_c_b, min_lane_w, max_lane_w, 20);
     int nlanes_raw = lanes.size();
     mergeLane(lanes, color_mask);
     int nlanes = lanes.size();
@@ -162,12 +163,14 @@ static void removeInvalid(std::vector<cv::Vec4f>& lines, const cv::Mat& mask)
 }
 
 static void detectLane(std::vector<cv::Vec4f>& lines, const cv::Mat& mask, LaneList& lanes,
-                       const cv::Mat& K, const cv::Mat& T_c_b)
+                       const cv::Mat& K, const cv::Mat& T_c_b, float min_lane_w, float max_lane_w,
+                       float max_lane_x)
 {
     if(lines.empty()) return;
     int nlines = lines.size();
 
-    auto foo_valid_d = [](float d) {return inRange(fabs(d), 0.05, 0.18);};
+    auto foo_valid_d = [min_lane_w, max_lane_w](float d)
+                        {return inRange(fabs(d), min_lane_w, max_lane_w);};
     auto foo_valid_cos = [](float cos) {return fabs(cos) > 0.98;};
     auto foo_valid_overlap = [](float r) {return r > 0.6;};
 
@@ -238,6 +241,25 @@ static void detectLane(std::vector<cv::Vec4f>& lines, const cv::Mat& mask, LaneL
         if(fc2b(lp.u1, lp.p1) && fc2b(lp.u2, lp.p2))
         {
             lp.cal();
+        #if 1 // cut line end point at max dist
+            double max_x = max_lane_x;
+            if(lp.p1.x > max_x && lp.p2.x > max_x)
+            {
+                continue;
+            }
+            else if(lp.p1.x > max_x)
+            {
+                double k = (max_x - lp.p2.x) / (lp.p1.x - lp.p2.x);
+                lp.p1 = lp.p2 + k * (lp.p1 - lp.p2);
+                lp.cal();
+            }
+            else if(lp.p2.x > max_x)
+            {
+                double k = (max_x - lp.p1.x) / (lp.p2.x - lp.p1.x);
+                lp.p2 = lp.p1 + k * (lp.p2 - lp.p1);
+                lp.cal();
+            }
+        #endif
             list.push_back(lp);
             // lp.print();
         }

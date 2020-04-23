@@ -101,8 +101,8 @@ double hypot4(T a, T b, T c, T d)
     return std::sqrt(sqsum4(a, b, c, d));
 }
 
-template<class T>
-inline T clip(T val, T min_val, T max_val)
+template<class T1, class T2, class T3>
+T1 clip(T1 val, T2 min_val, T3 max_val)
 {
     return val < min_val ? min_val : (val > max_val ? max_val : val);
 }
@@ -147,6 +147,27 @@ inline double deg2rad(double angle)
 inline double rad2deg(double angle)
 {
     return angle * 57.295779513082;
+}
+
+template<class T>
+bool lerp(double t1, const T& p1, double t2, const T& p2, double t, T& p)
+{
+    if(t1 > t2)
+    {
+        return lerp(t2, p2, t1, p1, t, p);
+    }
+    else if(t1 <= t && t <= t2)
+    {
+        double dt = t2 - t1;
+        double k = dt < 1e-6 ? 0.5 : (t - t1) / dt;
+        p = (1 - k) * p1 + k * p2;
+        return true;
+    }
+    else
+    {
+        printf("[ERROR]lerp: bad input, t must range [t1,t2].\n");
+        return false;
+    }
 }
 
 /** \brief Solve linear equation y=ax+b.

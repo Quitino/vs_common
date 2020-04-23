@@ -2,9 +2,11 @@
 #define __VS_CAM_CAPTURE_H__
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include <memory>
 #include "vs_tictoc.h"
 #include "vs_video_saver.h"
 #include "vs_data_saver.h"
+#include "vs_data_struct.h"
 
 namespace vs
 {
@@ -12,24 +14,20 @@ namespace vs
 class CamCapture
 {
 public:
-    CamCapture(): m_init(false), m_start(false), m_exit(false), m_idx(0)
-    {
-        setBufferSize(64);
-    }
+    CamCapture(): m_init(false), m_start(false), m_exit(false), m_idx(0), m_buffer(64)
+    {}
 
     CamCapture(int device, const char* fsave = NULL,
                cv::Size set_size = cv::Size(0, 0))
-        : m_init(false), m_start(false), m_exit(false), m_idx(0)
+        : m_init(false), m_start(false), m_exit(false), m_idx(0), m_buffer(64)
     {
-        setBufferSize(64);
         init(device, fsave, set_size);
     }
 
     CamCapture(const char* device, const char* fsave = NULL,
                cv::Size set_size = cv::Size(0, 0))
-        : m_init(false), m_start(false), m_exit(false), m_idx(0)
+        : m_init(false), m_start(false), m_exit(false), m_idx(0), m_buffer(64)
     {
-        setBufferSize(64);
         init(device, fsave, set_size);
     }
 
@@ -95,7 +93,7 @@ public:
                 return 0;
             }
         }
-        auto& p = m_buffer[(m_idx - 1) & m_mask];
+        auto& p = m_buffer[m_idx - 1];
         img = p.second;
         return p.first;
     }
@@ -105,35 +103,20 @@ public:
         return getLatest(img);
     }
 
-    void setBufferSize(int buf_len)
-    {
-        if(buf_len < 2 || (buf_len & (buf_len - 1)) != 0)
-        {
-            printf("[ERROR]CamCapture: invalid buffer size %d, use default %d"
-                   "only support 2^n, eg: 4, 8, 16, 32, 64, 128...\n",
-                   buf_len, m_len);
-            return;
-        }
-        m_len = buf_len;
-        m_mask = buf_len - 1;
-        m_buffer.resize(buf_len);
-        m_idx = 0;
-    }
 
 private:
     bool                            m_init;
     bool                            m_start;
     bool                            m_exit;
     int                             m_idx;
-    int                             m_len;
-    int                             m_mask;
-    std::vector<std::pair<double, cv::Mat> > m_buffer;
     cv::VideoCapture                m_cap;
     cv::VideoWriter                 m_vw;
     VideoSaver*                     m_vw_thread;
     std::thread*                    m_cap_thread;
     std::string                     m_imgts_file;
     cv::Size                        m_img_size;
+    FastCircularQueue<std::pair<double, cv::Mat>>   m_buffer;
+    std::shared_ptr<DataSaver<double>>              m_ts_saver;
 
     virtual bool initElse(const char* fsave, cv::Size set_size)
     {
@@ -174,7 +157,7 @@ private:
     virtual bool capture()
     {
         if(!m_start) return false;
-        auto& data = m_buffer[m_idx & m_mask];
+        auto& data = m_buffer[m_idx];
         if(!m_cap.read(data.second)) {return false;}
         data.first = getSysTs();
         m_idx++;
@@ -182,9 +165,12 @@ private:
         if(m_vw_thread) m_vw_thread->write(data.second);
         if(m_imgts_file.length() > 0)
         {
-            static DataSaver<double> saver(m_imgts_file.c_str(),
-                    [](FILE* fp, const double& d){fprintf(fp, "%f\n", d);});
-            saver.push(data.first);
+            if(!m_ts_saver.get())
+            {
+                m_ts_saver.reset(new DataSaver<double>(m_imgts_file.c_str(),
+                                [](FILE* fp, const double& d){fprintf(fp, "%f\n", d);}));
+            }
+            m_ts_saver->push(data.first);
         }
         return true;
     }

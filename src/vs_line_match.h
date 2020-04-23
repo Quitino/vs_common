@@ -79,6 +79,10 @@ bool ICL(const LineSegment2DList &model, const LineSegment2DList &target,
          bool use_init_guess = false, double thres_angle = 0.3, double thres_dist = 1,
          bool proj_affine = true);
 
+bool ICL(const LineSegment2DList &model, const LineSegment2DList &target,
+         cv::Point3f &transform, std::map<int, int> &match_ids, cv::Mat &info,
+         bool use_init_guess = false,double thres_angle = 0.3, double thres_dist = 1, bool proj_affine = true);
+
 bool ICL(const LineSegment2DList& model, const LineSegment2DList& target,
          cv::Point3f& transform, bool use_init_guess = false,
          double thres_angle = 0.3, double thres_dist = 1, bool proj_affine = true);

@@ -34,7 +34,8 @@ typedef std::vector<Lane> LaneList;
 // NOTE: input BGR image
 int laneDetect(const cv::Mat& img, LaneList& lanes,
                const cv::Mat& K, const cv::Mat& T_c_b,
-               int lane_type = 3, bool draw = false);
+               int lane_type = 3, float min_lane_w = 0.06,
+               float max_lane_w = 0.25, bool draw = false);
 
 } /* namespace vs */
 

@@ -1,9 +1,95 @@
-#include "vs_stereo_calib.h"
+#include "vs_calib.h"
 #include "vs_yaml_parser.h"
 #include "vs_cv_convert.h"
 
 namespace vs
 {
+
+static bool checkR(const cv::Mat& R)
+{
+    cv::Mat err = R * R.t() - cv::Mat::eye(3, 3, CV_64FC1);
+    double* ptr = (double*)err.data;
+    for(int i = 0; i < 9; i++)
+        if(*ptr++ > 0.01) return false;
+    return true;
+}
+
+bool MonoCalib::load(const char* fcalib, const char* cam_name)
+{
+    name = std::string(cam_name);
+    vs::YamlParser reader(fcalib);
+    if(!reader.isOpened()) return false;
+    #define MCREAD(a, n) reader.read<a>((name+"/"+std::string(n)).c_str())
+    distort_model = MCREAD(std::string, "distortion_model");
+    auto intrin = MCREAD(cv::Vec4d, "intrinsics");
+    fx = intrin[0];
+    fy = intrin[1];
+    cx = intrin[2];
+    cy = intrin[3];
+    K = (cv::Mat_<double>(3, 3)<<fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    D = cv::Mat(MCREAD(cv::Vec4d, "distortion_coeffs"));
+    auto v0 = MCREAD(std::vector<double>, "T_body_cam");
+    if(v0.size() != 16) return false;
+    cv::Mat T_cb(4, 4, CV_64FC1, &v0[0]);
+    cv::Mat R = T_cb(cv::Rect(0, 0, 3, 3));
+    if(!checkR(R))
+    {
+        printf("[ERROR]Calib read, R invalid.\n");
+        std::cout << R << std::endl;
+        return false;
+    }
+    T_c_b = T_cb.clone();
+    return true;
+}
+
+void MonoCalib::undistortImg(const cv::Mat& src, cv::Mat& dst, const cv::Mat& K_new)
+{
+    if(distort_model == "none")
+        dst = src.clone();
+    else if(distort_model == "radtan")
+        cv::undistort(src, dst, K, D, K_new);
+    else if(distort_model == "equidistant")
+        cv::fisheye::undistortImage(src, dst, K, D, K_new);
+    else
+        printf("[ERROR]Unknown distort model '%s'\n", distort_model.c_str());
+}
+
+void MonoCalib::undistortPts(const std::vector<cv::Point2f>& pts_in,
+                  std::vector<cv::Point2f>& pts_out,
+                  const cv::Matx33d &rectify, const cv::Vec4d &new_intrin)
+{
+    if (pts_in.empty()) return;
+    const cv::Matx33d K_new(new_intrin[0], 0.0, new_intrin[2],
+                0.0, new_intrin[1], new_intrin[3], 0.0, 0.0, 1.0);
+
+    if(distort_model == "none")
+        pts_out = pts_in;
+    else if (distort_model == "radtan")
+        cv::undistortPoints(pts_in, pts_out, K, D, rectify, K_new);
+    else if(distort_model == "equidistant")
+        cv::fisheye::undistortPoints(pts_in, pts_out, K, D, rectify, K_new);
+    else
+        printf("[ERROR]Unknown distort model '%s'\n", distort_model.c_str());
+}
+
+std::vector<cv::Point2f> MonoCalib::distortPts(const std::vector<cv::Point2f>& pts_in)
+{
+    std::vector<cv::Point2f> pts_out;
+    if (distort_model == "radtan")
+    {
+        std::vector<cv::Point3f> homogenous_pts;
+        cv::convertPointsToHomogeneous(pts_in, homogenous_pts);
+        cv::projectPoints(homogenous_pts, cv::Vec3d::zeros(),
+                          cv::Vec3d::zeros(), K, D, pts_out);
+    }
+    else if (distort_model == "equidistant")
+    {
+        cv::fisheye::distortPoints(pts_in, pts_out, K, D);
+    }
+    else
+        printf("[ERROR]Unknown distort model '%s'\n", distort_model.c_str());
+    return pts_out;
+}
 
 void StereoVioCalib::deepCopy(const StereoVioCalib& rhs)
 {

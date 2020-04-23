@@ -1,6 +1,7 @@
 #ifndef __VS_TIME_BUFFER_H__
 #define __VS_TIME_BUFFER_H__
 #include <deque>
+#include <vector>
 #include <functional>
 #include "vs_numeric.h"
 
@@ -73,6 +74,20 @@ public:
         if(k < 0 || k > 1) return false;
         res = foo_weighted_sum(k, a2.second, (1 - k), a1.second);
         return true;
+    }
+
+    // return data in time duration (start_ts, end_ts]
+    std::vector<T> getRange(double start_ts, double end_ts)
+    {
+        // TODO:accelerate with binary search
+        std::vector<T> res;
+        for(const auto& item : buffer)
+        {
+            if(item.first <= start_ts) continue;
+            else if(item.first > end_ts) break;
+            res.push_back(item.second);
+        }
+        return res;
     }
 
     void dropOld(double old_ts)

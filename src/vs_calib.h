@@ -1,9 +1,30 @@
-#ifndef __VS_STEREO_CALIB_H__
-#define __VS_STEREO_CALIB_H__
+#ifndef __VS_CALIB_H__
+#define __VS_CALIB_H__
 #include <opencv2/opencv.hpp>
 
 namespace vs
 {
+
+struct MonoCalib
+{
+    std::string name;
+    double fx, fy, cx, cy;
+    std::string distort_model;
+    cv::Mat K;
+    cv::Mat D;
+    cv::Mat T_c_b; //transformation point from camera to body
+
+    bool load(const char* fcalib, const char* cam_name);
+
+    void undistortImg(const cv::Mat& src, cv::Mat& dst, const cv::Mat& K_new);
+
+    void undistortPts(const std::vector<cv::Point2f>& pts_in,
+                      std::vector<cv::Point2f>& pts_out,
+                      const cv::Matx33d &rectify = cv::Matx33d::eye(),
+                      const cv::Vec4d &new_intrin = cv::Vec4d(1, 1, 0, 0));
+
+    std::vector<cv::Point2f> distortPts(const std::vector<cv::Point2f>& pts_in);
+};
 
 struct StereoVioCalib
 {
@@ -57,4 +78,4 @@ private:
 };
 
 } /* namespace vs */
-#endif//__VS_STEREO_CALIB_H__
+#endif//__VS_CALIB_H__

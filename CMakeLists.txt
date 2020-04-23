@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8)
 project(vs_common)
 
 set(BUILD_TEST 1)
-set(BUILD_GTEST 1)
+set(BUILD_GTEST 0)
 
 set(CMAKE_CXX_FLAGS "-std=c++11 -O3 -Wall -Werror")
 find_package(OpenCV 3 REQUIRED)

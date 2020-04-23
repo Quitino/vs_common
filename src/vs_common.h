@@ -5,6 +5,7 @@
 #define VS_VERSION_MINOR    0
 #define VS_VERSION_REVISION 1
 
+#include "vs_calib.h"
 #include "vs_cam_capture.h"
 #include "vs_cam_odom_calib.h"
 #include "vs_color_filter.h"
@@ -16,6 +17,8 @@
 #include "vs_debug_draw.h"
 #include "vs_exposure.h"
 #include "vs_gridmap2d.h"
+#include "vs_geometry2d.h"
+#include "vs_geometry3d.h"
 #include "vs_improc.h"
 #include "vs_kdtree.h"
 #include "vs_lane_detect.h"
@@ -34,7 +37,6 @@
 #include "vs_shape_detect.h"
 #include "vs_singleton.h"
 #include "vs_stdout.h"
-#include "vs_stereo_calib.h"
 #include "vs_strutils.h"
 #include "vs_syslog.h"
 #include "vs_tictoc.h"

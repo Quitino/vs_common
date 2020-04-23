@@ -16,7 +16,6 @@ void perfBegin(const char* name)
 {
     if(p_perf_enable)
         p_perf_counter[std::string(name)].start();
-
 }
 
 void perfEnd(const char* name)

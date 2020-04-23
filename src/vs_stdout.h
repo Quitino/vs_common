@@ -9,7 +9,7 @@
 template <typename T>
 std::ostream& operator<<(std::ostream &os, const std::vector<T>& m )
 {
-    for (int i=0;i<m.size();i++)
+    for (size_t i=0;i<m.size();i++)
         os <<m[i]<<" ";
     return os;
 }
@@ -17,7 +17,7 @@ std::ostream& operator<<(std::ostream &os, const std::vector<T>& m )
 template <typename T>
 std::ostream& operator<<(std::ostream &os, const std::deque<T>& m )
 {
-    for (int i=0;i<m.size();i++)
+    for (size_t i=0;i<m.size();i++)
         os <<m[i]<<" ";
     return os;
 }
